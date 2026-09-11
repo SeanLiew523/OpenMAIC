@@ -130,7 +130,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
         method: 'POST',
         headers: {
           'x-image-provider': selectedProviderId,
-          'x-image-model': imageModelId || '',
+          'x-image-model': imageModelId || builtInModels[0]?.id || '',
           'x-api-key': currentConfig?.apiKey || '',
           'x-base-url': currentConfig?.baseUrl || '',
         },

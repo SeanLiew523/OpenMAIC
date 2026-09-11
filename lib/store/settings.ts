@@ -628,9 +628,14 @@ function resolveMediaModels<T extends { id: string; name: string }>(
   config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
 ): T[] {
   const customModels = config?.customModels ?? [];
-  return config?.replaceBuiltInModels && customModels.length > 0
-    ? customModels
-    : [...builtInModels, ...customModels];
+  const merged =
+    config?.replaceBuiltInModels && customModels.length > 0
+      ? customModels
+      : [...builtInModels, ...customModels];
+  // A custom model duplicating a built-in id breaks "usable provider ⇒ a
+  // concrete model is selected" consumers (duplicate React keys in the media
+  // popover, ambiguous selections), so keep first occurrence per id.
+  return merged.filter((m, i) => merged.findIndex((x) => x.id === m.id) === i);
 }
 
 function hasMediaCredential(value: string | undefined): boolean {
@@ -856,6 +861,29 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
 
   if (!hasProviderId(VIDEO_PROVIDERS, state.videoProviderId)) {
     state.videoProviderId = defaultVideoConfig.videoProviderId;
+  }
+
+  // A blank model id can get persisted (e.g. selecting a provider whose
+  // catalog is empty at the time, like comfyui-image), and nothing downstream
+  // heals it: every generation/verify call then fails with "No model
+  // configured". Fill blanks from the provider's own catalog; never overwrite
+  // an existing selection (async catalogs like ComfyUI workflows are handled
+  // by their own selection flows).
+  if (state.imageProviderId && !state.imageModelId) {
+    const models = resolveMediaModels(
+      IMAGE_PROVIDERS[state.imageProviderId]?.models ?? [],
+      state.imageProvidersConfig?.[state.imageProviderId],
+    );
+    const first = models[0]?.id;
+    if (first) state.imageModelId = first;
+  }
+  if (state.videoProviderId && !state.videoModelId) {
+    const models = resolveMediaModels(
+      VIDEO_PROVIDERS[state.videoProviderId]?.models ?? [],
+      state.videoProvidersConfig?.[state.videoProviderId],
+    );
+    const first = models[0]?.id;
+    if (first) state.videoModelId = first;
   }
 
   if (

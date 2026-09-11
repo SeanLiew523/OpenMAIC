@@ -92,7 +92,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
         method: 'POST',
         headers: {
           'x-video-provider': selectedProviderId,
-          'x-video-model': videoModelId || '',
+          'x-video-model': videoModelId || builtInModels[0]?.id || '',
           'x-api-key': currentConfig?.apiKey || '',
           'x-base-url': currentConfig?.baseUrl || '',
         },

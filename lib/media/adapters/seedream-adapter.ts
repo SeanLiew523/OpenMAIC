@@ -34,10 +34,16 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
  * baseUrl that already carries an `/api/...` path (e.g. a token plan's
  * `https://ark.cn-beijing.volces.com/api/plan/v3`) or ends in a version segment
  * (e.g. a gateway route such as `https://gateway.example/ark/v3`) is used
- * verbatim. Trailing slashes are trimmed.
+ * verbatim. Trailing slashes are trimmed. A full endpoint pasted as the baseUrl
+ * (…/images/generations) is reduced to its root — the call sites append the
+ * endpoint path themselves, and leaving it in produces a doubled path the API
+ * rejects with `InvalidAction: /api/v3/images/generations/images/generations`.
  */
 function resolveArkRoot(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, '');
+  const trimmed = baseUrl
+    .replace(/\/+$/, '')
+    .replace(/\/images\/generations$/, '')
+    .replace(/\/+$/, '');
   return /\/api\//.test(trimmed) || /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
 }
 
