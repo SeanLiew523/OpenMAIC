@@ -1,0 +1,163 @@
+diff --git a/components/generation/media-popover.tsx b/components/generation/media-popover.tsx
+index 35f7986..58ea7f7 100644
+--- a/components/generation/media-popover.tsx
++++ b/components/generation/media-popover.tsx
+@@ -69,10 +69,13 @@ function providerModels<T extends { id: string; name: string }>(
+   config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+ ): T[] {
+   const customModels = config?.customModels || [];
+-  if (config?.replaceBuiltInModels && customModels.length > 0) {
+-    return customModels;
+-  }
+-  return [...builtInModels, ...customModels];
++  const merged =
++    config?.replaceBuiltInModels && customModels.length > 0
++      ? customModels
++      : [...builtInModels, ...customModels];
++  // A custom model duplicating a built-in id yields duplicate SelectItem keys
++  // ("Encountered two children with the same key"), so keep first per id.
++  return merged.filter((m, i) => merged.findIndex((x) => x.id === m.id) === i);
+ }
+ 
+ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
+diff --git a/components/settings/image-settings.tsx b/components/settings/image-settings.tsx
+index f07e936..97a69d4 100644
+--- a/components/settings/image-settings.tsx
++++ b/components/settings/image-settings.tsx
+@@ -124,7 +124,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
+         method: 'POST',
+         headers: {
+           'x-image-provider': selectedProviderId,
+-          'x-image-model': imageModelId || '',
++          'x-image-model': imageModelId || builtInModels[0]?.id || '',
+           'x-api-key': currentConfig?.apiKey || '',
+           'x-base-url': currentConfig?.baseUrl || '',
+         },
+@@ -135,7 +135,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
+         setTestMessage(t('settings.imageConnectivitySuccess'));
+       } else {
+         setTestStatus('error');
+-        setTestMessage(`${t('settings.imageConnectivityFailed')}: ${data.message}`);
++        setTestMessage(`${t('settings.imageConnectivityFailed')}: ${data.error}`);
+       }
+     } catch (err) {
+       setTestStatus('error');
+diff --git a/components/settings/video-settings.tsx b/components/settings/video-settings.tsx
+index c200693..9b753c2 100644
+--- a/components/settings/video-settings.tsx
++++ b/components/settings/video-settings.tsx
+@@ -86,7 +86,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
+         method: 'POST',
+         headers: {
+           'x-video-provider': selectedProviderId,
+-          'x-video-model': videoModelId || '',
++          'x-video-model': videoModelId || builtInModels[0]?.id || '',
+           'x-api-key': currentConfig?.apiKey || '',
+           'x-base-url': currentConfig?.baseUrl || '',
+         },
+@@ -97,7 +97,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
+         setTestMessage(t('settings.videoConnectivitySuccess'));
+       } else {
+         setTestStatus('error');
+-        setTestMessage(`${t('settings.videoConnectivityFailed')}: ${data.message}`);
++        setTestMessage(`${t('settings.videoConnectivityFailed')}: ${data.error}`);
+       }
+     } catch (err) {
+       setTestStatus('error');
+diff --git a/instrumentation.ts b/instrumentation.ts
+index 9310515..78acacd 100644
+--- a/instrumentation.ts
++++ b/instrumentation.ts
+@@ -15,6 +15,17 @@ export async function register(): Promise<void> {
+   // want; the persistence stack is Node-only.
+   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+ 
++  // undici's defaults cap response headers at 5 minutes and body gaps at 5
++  // minutes. Non-streaming LLM scene generation routinely runs past that on
++  // heavy scene types (interactive HTML simulations on a slow model), dying at
++  // exactly 5:00 with "Headers Timeout Error". Give those requests 15 minutes.
++  try {
++    const { Agent, setGlobalDispatcher } = await import('undici');
++    setGlobalDispatcher(new Agent({ headersTimeout: 900_000, bodyTimeout: 900_000 }));
++  } catch (error) {
++    console.error('[instrumentation] Failed to raise undici timeouts', error);
++  }
++
+   // Imported dynamically so the Edge bundle never pulls in `pg`.
+   const { startAssetCollectorSchedule } =
+     await import('@/lib/persistence/asset-collector-schedule');
+diff --git a/lib/media/adapters/seedream-adapter.ts b/lib/media/adapters/seedream-adapter.ts
+index dccc38e..bb8682d 100644
+--- a/lib/media/adapters/seedream-adapter.ts
++++ b/lib/media/adapters/seedream-adapter.ts
+@@ -30,10 +30,16 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
+  * `https://ark.cn-beijing.volces.com`) gets the standard `/api/v3` appended; a
+  * baseUrl that already carries an `/api/...` path (e.g. a token plan's
+  * `https://ark.cn-beijing.volces.com/api/plan/v3`) is used verbatim. Trailing
+- * slashes are trimmed.
++ * slashes are trimmed. A full endpoint pasted as the baseUrl (…/images/
++ * generations) is reduced to its root — the call sites append the endpoint
++ * path themselves, and leaving it in produces a doubled path the API rejects
++ * with `InvalidAction: /api/v3/images/generations/images/generations`.
+  */
+ function resolveArkRoot(baseUrl: string): string {
+-  const trimmed = baseUrl.replace(/\/+$/, '');
++  const trimmed = baseUrl
++    .replace(/\/+$/, '')
++    .replace(/\/images\/generations$/, '')
++    .replace(/\/+$/, '');
+   return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+ }
+ 
+diff --git a/lib/store/settings.ts b/lib/store/settings.ts
+index 06f3caa..b5ee822 100644
+--- a/lib/store/settings.ts
++++ b/lib/store/settings.ts
+@@ -461,9 +461,14 @@ function resolveMediaModels<T extends { id: string; name: string }>(
+   config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+ ): T[] {
+   const customModels = config?.customModels ?? [];
+-  return config?.replaceBuiltInModels && customModels.length > 0
+-    ? customModels
+-    : [...builtInModels, ...customModels];
++  const merged =
++    config?.replaceBuiltInModels && customModels.length > 0
++      ? customModels
++      : [...builtInModels, ...customModels];
++  // A custom model duplicating a built-in id breaks "usable provider ⇒ a
++  // concrete model is selected" consumers (duplicate React keys in the media
++  // popover, ambiguous selections), so keep first occurrence per id.
++  return merged.filter((m, i) => merged.findIndex((x) => x.id === m.id) === i);
+ }
+ 
+ function hasMediaCredential(value: string | undefined): boolean {
+@@ -687,6 +692,29 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
+     state.videoProviderId = defaultVideoConfig.videoProviderId;
+   }
+ 
++  // A blank model id can get persisted (e.g. selecting a provider whose
++  // catalog is empty at the time, like comfyui-image), and nothing downstream
++  // heals it: every generation/verify call then fails with "No model
++  // configured". Fill blanks from the provider's own catalog; never overwrite
++  // an existing selection (async catalogs like ComfyUI workflows are handled
++  // by their own selection flows).
++  if (state.imageProviderId && !state.imageModelId) {
++    const models = resolveMediaModels(
++      IMAGE_PROVIDERS[state.imageProviderId]?.models ?? [],
++      state.imageProvidersConfig?.[state.imageProviderId],
++    );
++    const first = models[0]?.id;
++    if (first) state.imageModelId = first;
++  }
++  if (state.videoProviderId && !state.videoModelId) {
++    const models = resolveMediaModels(
++      VIDEO_PROVIDERS[state.videoProviderId]?.models ?? [],
++      state.videoProvidersConfig?.[state.videoProviderId],
++    );
++    const first = models[0]?.id;
++    if (first) state.videoModelId = first;
++  }
++
+   if (
+     !hasProviderId(TTS_PROVIDERS, state.ttsProviderId) &&
+     !(
