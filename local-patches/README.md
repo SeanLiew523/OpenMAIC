@@ -2,17 +2,39 @@
 
 补丁文件:`openmaic-local-patches-20260910.patch`(6 文件,+61/-13)
 
-## 重新应用方法
+## 当前管理方式(2026-09-10 起):local-patches 分支
+
+全部补丁已提交到本仓库的 **`local-patches` 分支**(commit `0fe3a71`,基于官方 `29735f1`)。
+**日常使用请停留在此分支**(当前运行的 dev server 就是这个分支的内容)。
+
+### 官方更新时的标准升级流程
 
 ```bash
-cd ~/OpenMAIC && git apply --check /Users/seanliew/openmaic-local-patches/openmaic-local-patches-20260910.patch  # 先干跑检查
-git apply /Users/seanliew/openmaic-local-patches/openmaic-local-patches-20260910.patch
+cd ~/OpenMAIC
+git fetch origin
+git rebase origin/main        # 在 local-patches 分支上执行
+# 有冲突:逐个文件解决(本 README 的清单就是冲突地图),git rebase --continue
+pnpm install                  # 若 lockfile 有变
+# 然后跑下面的「30 秒回归清单」
 ```
 
-若 `git apply` 因官方代码变化失败,改用三路合并(成功率更高):
+### 灾难恢复(仓库被删/重克隆时)
+
 ```bash
-git apply -3 /Users/seanliew/openmaic-local-patches/openmaic-local-patches-20260910.patch
+cd ~/OpenMAIC && git checkout -b local-patches
+git apply -3 local-patches/openmaic-local-patches-20260910.patch
+# 或从仓库外的双保险副本:git apply -3 /Users/seanliew/openmaic-local-patches/openmaic-local-patches-20260910.patch
+git add -A && git commit -m "fix: local operation patches (replay)"
 ```
+
+## 上游回馈状态
+
+| 问题 | 上游链接 | 状态 |
+|------|---------|------|
+| 测试连接显示 undefined(字段读错) | [issue #1457](https://github.com/THU-MAIC/OpenMAIC/issues/1457) / [PR #1459](https://github.com/THU-MAIC/OpenMAIC/pull/1459) | PR 已提交(2 行修复) |
+| interactive 场景 5 分钟超时 | [issue #1458](https://github.com/THU-MAIC/OpenMAIC/issues/1458) | 已报告,等官方定方向 |
+
+**PR 被合并后**:下次 rebase 时对应补丁若冲突,以官方版本为准(官方已修);无冲突也会成为冗余补丁,可在 rebase 时手动剔除该 hunk。
 
 ## 补丁内容清单(共 6 项修复)
 
