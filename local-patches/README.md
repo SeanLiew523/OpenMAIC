@@ -13,6 +13,7 @@
 | ④ | settings.ts `resolveMediaModels` 按 id 去重 | 重复模型条目 / React duplicate key | **保留**(上游仍不去重;v1.1.1 已删除 media-popover.tsx,新 UI `course-model-config.tsx` 同样不去重,如遇重复条目需给新文件补) |
 | ⑤ | image/video-settings.tsx 测试按钮兜底 `builtInModels[0]` | 空模型时测试直接 400 | **保留** |
 | ⑦ | seedream-adapter.ts `resolveArkRoot` 剥完整端点 | Base URL 粘成完整端点→路径重复 404 | **保留**(与官方新增的 `/v\d+` 判断已合并) |
+| ⑧ | ssrf-guard.ts:198.18.0.0/15 改为受 `ALLOW_LOCAL_NETWORKS` 管辖 | 本机代理 Fake-IP DNS 把所有公网域名解析到该段→v1.1.1 守卫无条件拒绝→**所有服务商调用全断** | **保留**(v1.1.1 新增;.env.local 已设 `ALLOW_LOCAL_NETWORKS=true`;配套调整了 3 个 ssrf 测试断言) |
 
 ## 日常使用
 
