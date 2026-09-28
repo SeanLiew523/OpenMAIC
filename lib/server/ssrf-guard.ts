@@ -169,18 +169,36 @@ function isCloudMetadataAddress(value: string): boolean {
 }
 
 /**
+ * 198.18.0.0/15 (IANA benchmarking) is also the DNS range the fake-IP mode of
+ * local proxy tools (Clash, Surge, …) hands out for every public domain: the
+ * connection never leaves the proxy process, which routes by hostname. A
+ * machine behind such a proxy resolves *every* provider hostname into this
+ * range, so keeping it in the never-allowed list makes all providers
+ * uncallable. Treat it as opt-in governed (like CGNAT) instead of never
+ * allowed: blocked by default, allowed with `ALLOW_LOCAL_NETWORKS`.
+ */
+function isBenchmarkFakeIpRange(value: string): boolean {
+  const canonical = canonicalizeIp(value);
+  if (canonical === null) return false;
+  const parsed = ipaddr.parse(canonical);
+  return parsed.kind() === 'ipv4' && parsed.match(ipaddr.IPv4.parse('198.18.0.0'), 15);
+}
+
+/**
  * Ranges that are never valid outbound proxy targets, with or without
  * `ALLOW_LOCAL_NETWORKS`: IANA reserved and special-use blocks (240.0.0.0/4,
- * 198.18.0.0/15, the TEST-NET blocks, 192.0.0.0/24, ...), multicast and
- * broadcast. Private, loopback, link-local and carrier-grade NAT ranges are
- * deliberately excluded because allowing those is the whole point of the
- * opt-in (see {@link isOptInGovernedRange}).
+ * the TEST-NET blocks, 192.0.0.0/24, ...), multicast and broadcast — with the
+ * benchmarking exception handled by {@link isBenchmarkFakeIpRange}. Private,
+ * loopback, link-local and carrier-grade NAT ranges are deliberately excluded
+ * because allowing those is the whole point of the opt-in (see
+ * {@link isOptInGovernedRange}).
  *
  * Both `validateUrlForSSRF` and `connectionAddressBlockReason` apply this, so an
  * IP-literal URL (for which Node never runs `connect.lookup`) and a hostname
  * that resolves into the same range get the same decision.
  */
 function isNeverAllowedRange(value: string): boolean {
+  if (isBenchmarkFakeIpRange(value)) return false;
   const canonical = canonicalizeIp(value);
   if (canonical === null) return false;
   const range = ipaddr.parse(canonical).range();
@@ -189,15 +207,21 @@ function isNeverAllowedRange(value: string): boolean {
 
 /**
  * Ranges the `ALLOW_LOCAL_NETWORKS` opt-in governs: private, loopback and
- * link-local targets, plus carrier-grade NAT (100.64.0.0/10). CGNAT is a
- * routable unicast range that overlay networks such as Tailscale/Headscale
- * assign to their nodes, so self-hosted model servers behind one need the same
- * opt-in as RFC1918 targets. Blocked by default, allowed with the flag.
+ * link-local targets, plus carrier-grade NAT (100.64.0.0/10) and the
+ * proxy fake-IP benchmarking range (198.18.0.0/15, see
+ * {@link isBenchmarkFakeIpRange}). CGNAT is a routable unicast range that
+ * overlay networks such as Tailscale/Headscale assign to their nodes, so
+ * self-hosted model servers behind one need the same opt-in as RFC1918
+ * targets. Blocked by default, allowed with the flag.
  */
 function isOptInGovernedRange(value: string): boolean {
   const canonical = canonicalizeIp(value);
   if (canonical === null) return false;
-  return isPrivateIP(canonical) || ipaddr.parse(canonical).range() === 'carrierGradeNat';
+  return (
+    isPrivateIP(canonical) ||
+    ipaddr.parse(canonical).range() === 'carrierGradeNat' ||
+    isBenchmarkFakeIpRange(canonical)
+  );
 }
 
 /** dns.lookup bounded by a timer; resolves to null on timeout so the caller decides. */
