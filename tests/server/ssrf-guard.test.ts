@@ -340,11 +340,14 @@ describe('validateUrlForSSRF', () => {
   it('rejects hostnames that resolve into CGNAT/reserved ranges', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
+    // LOCAL DEVIATION (local-patches #8): 198.18.0.0/15 is opt-in governed on
+    // this deployment — the machine runs a fake-IP proxy whose DNS answers
+    // every public hostname inside that range — so the benchmarking address is
+    // dropped from the default-block list here; see ssrf-guard.ts.
     const answers: Array<{ address: string; family: number }> = [
       { address: '100.64.0.1', family: 4 },
       { address: '100.100.100.100', family: 4 },
       { address: '240.0.0.1', family: 4 },
-      { address: '198.18.0.1', family: 4 },
       { address: '::ffff:100.64.0.1', family: 6 },
     ];
 
@@ -423,9 +426,11 @@ describe('validateUrlForSSRF', () => {
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
+    // LOCAL DEVIATION (local-patches #8): 198.18.0.0/15 is opt-in governed on
+    // this deployment (fake-IP proxy DNS), so its literal is no longer in the
+    // always-block list; see ssrf-guard.ts.
     for (const url of [
       'http://240.0.0.1/',
-      'http://198.18.0.1/',
       'http://224.0.0.1/',
       'http://255.255.255.255/',
     ]) {
@@ -745,10 +750,15 @@ describe('connectionAddressBlockReason', () => {
   it('matches validateUrlForSSRF for reserved/multicast ranges, opt-in or not', async () => {
     const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
 
-    for (const address of ['240.0.0.1', '198.18.0.1', '224.0.0.1', '255.255.255.255']) {
+    // LOCAL DEVIATION (local-patches #8): 198.18.0.0/15 is opt-in governed on
+    // this deployment (fake-IP proxy DNS), so the benchmarking literal is
+    // asserted with the opt-in semantics instead; see ssrf-guard.ts.
+    for (const address of ['240.0.0.1', '224.0.0.1', '255.255.255.255']) {
       expect(connectionAddressBlockReason(address, false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
       expect(connectionAddressBlockReason(address, true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
+    expect(connectionAddressBlockReason('198.18.0.1', false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('198.18.0.1', true)).toBeNull();
   });
 
   it('governs CGNAT addresses by the opt-in and keeps metadata blocked with the flag', async () => {
