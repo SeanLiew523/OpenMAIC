@@ -1,0 +1,101 @@
+diff --git a/components/settings/image-settings.tsx b/components/settings/image-settings.tsx
+index dcffbf0c..d3e0b632 100644
+--- a/components/settings/image-settings.tsx
++++ b/components/settings/image-settings.tsx
+@@ -130,7 +130,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
+         method: 'POST',
+         headers: {
+           'x-image-provider': selectedProviderId,
+-          'x-image-model': imageModelId || '',
++          'x-image-model': imageModelId || builtInModels[0]?.id || '',
+           'x-api-key': currentConfig?.apiKey || '',
+           'x-base-url': currentConfig?.baseUrl || '',
+         },
+diff --git a/components/settings/video-settings.tsx b/components/settings/video-settings.tsx
+index 3a25a558..8530d1dc 100644
+--- a/components/settings/video-settings.tsx
++++ b/components/settings/video-settings.tsx
+@@ -92,7 +92,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
+         method: 'POST',
+         headers: {
+           'x-video-provider': selectedProviderId,
+-          'x-video-model': videoModelId || '',
++          'x-video-model': videoModelId || builtInModels[0]?.id || '',
+           'x-api-key': currentConfig?.apiKey || '',
+           'x-base-url': currentConfig?.baseUrl || '',
+         },
+diff --git a/lib/media/adapters/seedream-adapter.ts b/lib/media/adapters/seedream-adapter.ts
+index 61679884..9cb20620 100644
+--- a/lib/media/adapters/seedream-adapter.ts
++++ b/lib/media/adapters/seedream-adapter.ts
+@@ -33,10 +33,16 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
+  * baseUrl that already carries an `/api/...` path (e.g. a token plan's
+  * `https://ark.cn-beijing.volces.com/api/plan/v3`) or ends in a version segment
+  * (e.g. a gateway route such as `https://gateway.example/ark/v3`) is used
+- * verbatim. Trailing slashes are trimmed.
++ * verbatim. Trailing slashes are trimmed. A full endpoint pasted as the baseUrl
++ * (…/images/generations) is reduced to its root — the call sites append the
++ * endpoint path themselves, and leaving it in produces a doubled path the API
++ * rejects with `InvalidAction: /api/v3/images/generations/images/generations`.
+  */
+ function resolveArkRoot(baseUrl: string): string {
+-  const trimmed = baseUrl.replace(/\/+$/, '');
++  const trimmed = baseUrl
++    .replace(/\/+$/, '')
++    .replace(/\/images\/generations$/, '')
++    .replace(/\/+$/, '');
+   return /\/api\//.test(trimmed) || /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+ }
+ 
+diff --git a/lib/store/settings.ts b/lib/store/settings.ts
+index d26e71e4..53a95e6a 100644
+--- a/lib/store/settings.ts
++++ b/lib/store/settings.ts
+@@ -628,9 +628,14 @@ function resolveMediaModels<T extends { id: string; name: string }>(
+   config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+ ): T[] {
+   const customModels = config?.customModels ?? [];
+-  return config?.replaceBuiltInModels && customModels.length > 0
+-    ? customModels
+-    : [...builtInModels, ...customModels];
++  const merged =
++    config?.replaceBuiltInModels && customModels.length > 0
++      ? customModels
++      : [...builtInModels, ...customModels];
++  // A custom model duplicating a built-in id breaks "usable provider ⇒ a
++  // concrete model is selected" consumers (duplicate React keys in the media
++  // popover, ambiguous selections), so keep first occurrence per id.
++  return merged.filter((m, i) => merged.findIndex((x) => x.id === m.id) === i);
+ }
+ 
+ function hasMediaCredential(value: string | undefined): boolean {
+@@ -858,6 +863,29 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
+     state.videoProviderId = defaultVideoConfig.videoProviderId;
+   }
+ 
++  // A blank model id can get persisted (e.g. selecting a provider whose
++  // catalog is empty at the time, like comfyui-image), and nothing downstream
++  // heals it: every generation/verify call then fails with "No model
++  // configured". Fill blanks from the provider's own catalog; never overwrite
++  // an existing selection (async catalogs like ComfyUI workflows are handled
++  // by their own selection flows).
++  if (state.imageProviderId && !state.imageModelId) {
++    const models = resolveMediaModels(
++      IMAGE_PROVIDERS[state.imageProviderId]?.models ?? [],
++      state.imageProvidersConfig?.[state.imageProviderId],
++    );
++    const first = models[0]?.id;
++    if (first) state.imageModelId = first;
++  }
++  if (state.videoProviderId && !state.videoModelId) {
++    const models = resolveMediaModels(
++      VIDEO_PROVIDERS[state.videoProviderId]?.models ?? [],
++      state.videoProvidersConfig?.[state.videoProviderId],
++    );
++    const first = models[0]?.id;
++    if (first) state.videoModelId = first;
++  }
++
+   if (
+     !hasProviderId(TTS_PROVIDERS, state.ttsProviderId) &&
+     !(
