@@ -5,7 +5,7 @@ cd "$(dirname "$0")" || exit 1
 rc=$?
 echo
 if [ $rc -eq 0 ]; then
-  echo "✅ 完成。服务在后台跑着,这个窗口可以关掉了(⌘W),浏览器打开 http://localhost:3000 使用"
+  echo "✅ 完成。页面已在浏览器打开(http://localhost:3000),这个窗口可以关掉了(⌘W)"
 else
   echo "❌ 启动出了问题,把上面窗口截图发给助手排查"
 fi

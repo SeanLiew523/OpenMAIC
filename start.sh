@@ -77,9 +77,10 @@ pnpm db:up || { echo "✗ 数据库启动失败,把上面的报错发给助手�
 
 # ---- 3/3 网页服务 ----
 if lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "[3/3] :3000 已有服务在跑,跳过(想重启请先 ./stop.sh)"
+  echo "[3/3] :3000 已有服务在跑,直接打开浏览器…"
+  open http://localhost:3000
   echo
-  echo "✓ OpenMAIC 可用:http://localhost:3000"
+  echo "✓ OpenMAIC 可用:http://localhost:3000(已在默认浏览器打开)"
   exit 0
 fi
 
@@ -90,7 +91,8 @@ for i in $(seq 1 60); do
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000/ 2>/dev/null)
   if [ "$code" = "200" ]; then
     echo
-    echo "✓ OpenMAIC 已就绪:http://localhost:3000"
+    echo "✓ OpenMAIC 已就绪,正在打开浏览器…"
+    open http://localhost:3000
     exit 0
   fi
   sleep 2
