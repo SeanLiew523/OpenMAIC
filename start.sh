@@ -3,23 +3,69 @@
 # 用法:终端里运行  ./start.sh
 # 服务后台运行,日志在 /tmp/openmaic-dev.log;关闭用 ./stop.sh
 cd "$(dirname "$0")" || exit 1
-# 双击运行(.command)时 .zshrc 未必加载,显式补齐 pnpm 等的搜索路径
-export PATH="$HOME/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 双击运行(.command)时 .zshrc 未必加载,把 pnpm 等所在目录追加为兜底
+# (追加而非前置:避免压过 .zshrc 里配置的新版 node)
+export PATH="$PATH:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin"
 
 # ---- 1/3 Docker ----
+docker_procs() { pgrep -f "/Applications/Docker.app" 2>/dev/null | wc -l | tr -d ' '; }
+
 if docker info >/dev/null 2>&1; then
   echo "[1/3] Docker 已在运行"
 else
-  echo "[1/3] Docker 未运行,正在启动 Docker Desktop(冷启动可能要 30~60 秒)…"
-  open -a Docker
-  ok=""
-  for i in $(seq 1 60); do
-    if docker info >/dev/null 2>&1; then ok=1; break; fi
+  echo "[1/3] Docker 未运行,准备启动 Docker Desktop…"
+
+  # 上一次 Docker Desktop 可能还在退出中:此时 open 会转交给垂死的旧实例而被"吞掉"。
+  # 先等旧进程退干净;超过 40 秒还在就强制结束(守护进程已停,强杀安全)。
+  if [ "$(docker_procs)" -gt 0 ]; then
+    echo "      检测到旧的 Docker Desktop 正在退出,等它退干净…"
+    for i in $(seq 1 20); do
+      [ "$(docker_procs)" -eq 0 ] && break
+      sleep 2
+    done
+    if [ "$(docker_procs)" -gt 0 ]; then
+      echo "      40 秒还没退完,强制结束残留进程…"
+      pkill -9 -f "/Applications/Docker.app" 2>/dev/null
+      sleep 3
+    fi
+  fi
+
+  # 启动应用,并确认进程真的出现(最多重试 3 次)
+  launched=""
+  for round in 1 2 3; do
+    open -a Docker 2>/dev/null || open -a "Docker Desktop" 2>/dev/null
+    for i in $(seq 1 8); do
+      if [ "$(docker_procs)" -gt 0 ]; then launched=1; break; fi
+      sleep 2
+    done
+    [ -n "$launched" ] && break
+    echo "      第 $round 次启动没看到 Docker 进程,再试一次…"
+    sleep 3
+  done
+  if [ -z "$launched" ]; then
+    echo "✗ 反复启动都没拉起 Docker Desktop 进程。请在启动台/应用程序里"
+    echo "  手动双击 Docker,看到窗口后再运行一次本脚本。"
+    exit 1
+  fi
+
+  # 等引擎就绪:冷启动一般 30~90 秒,给足 4 分钟;进程若中途消失则重新拉起
+  echo "      等 Docker 引擎就绪(一般 30~90 秒)…"
+  ready=""
+  for i in $(seq 1 120); do
+    if docker info >/dev/null 2>&1; then ready=1; break; fi
+    if [ "$i" -gt 10 ] && [ "$(docker_procs)" -eq 0 ]; then
+      echo "      Docker 进程中途退出了,重新拉起…"
+      open -a Docker 2>/dev/null || open -a "Docker Desktop" 2>/dev/null
+    fi
+    if [ $((i % 5)) -eq 0 ]; then
+      echo "      … 已等待 $((i * 2)) 秒"
+    fi
     sleep 2
   done
-  if [ -z "$ok" ]; then
-    echo "✗ 等了 2 分钟 Docker 还没就绪。请手动打开 Docker Desktop,"
-    echo "  等菜单栏鲸鱼图标稳定后再运行一次本脚本。"
+  if [ -z "$ready" ]; then
+    echo "✗ 等了 4 分钟 Docker 引擎还没就绪。请手动检查:"
+    echo "  1. 菜单栏鲸鱼图标点开,看有没有弹窗等你确认(服务条款/更新/登录)"
+    echo "  2. 打开 Docker Desktop 主窗口,等它左下角变成绿色再跑一次本脚本"
     exit 1
   fi
   echo "      Docker 已就绪"

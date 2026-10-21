@@ -3,8 +3,9 @@
 # 用法:终端里运行  ./stop.sh
 # Docker Desktop 保持开启(关库不关 Docker);要连 Docker 一起退出,取消最后一行注释
 cd "$(dirname "$0")" || exit 1
-# 双击运行(.command)时 .zshrc 未必加载,显式补齐 pnpm 等的搜索路径
-export PATH="$HOME/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 双击运行(.command)时 .zshrc 未必加载,把 pnpm 等所在目录追加为兜底
+# (追加而非前置:避免压过 .zshrc 里配置的新版 node)
+export PATH="$PATH:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin"
 
 # ---- 1/2 网页服务 ----
 pids=$(lsof -nP -tiTCP:3000 -sTCP:LISTEN 2>/dev/null)
