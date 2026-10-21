@@ -3,6 +3,8 @@
 # 用法:终端里运行  ./start.sh
 # 服务后台运行,日志在 /tmp/openmaic-dev.log;关闭用 ./stop.sh
 cd "$(dirname "$0")" || exit 1
+# 双击运行(.command)时 .zshrc 未必加载,显式补齐 pnpm 等的搜索路径
+export PATH="$HOME/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 # ---- 1/3 Docker ----
 if docker info >/dev/null 2>&1; then
