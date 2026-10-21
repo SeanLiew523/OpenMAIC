@@ -1,34 +1,8 @@
-diff --git a/components/settings/image-settings.tsx b/components/settings/image-settings.tsx
-index dcffbf0c..d3e0b632 100644
---- a/components/settings/image-settings.tsx
-+++ b/components/settings/image-settings.tsx
-@@ -130,7 +130,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
-         method: 'POST',
-         headers: {
-           'x-image-provider': selectedProviderId,
--          'x-image-model': imageModelId || '',
-+          'x-image-model': imageModelId || builtInModels[0]?.id || '',
-           'x-api-key': currentConfig?.apiKey || '',
-           'x-base-url': currentConfig?.baseUrl || '',
-         },
-diff --git a/components/settings/video-settings.tsx b/components/settings/video-settings.tsx
-index 3a25a558..8530d1dc 100644
---- a/components/settings/video-settings.tsx
-+++ b/components/settings/video-settings.tsx
-@@ -92,7 +92,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
-         method: 'POST',
-         headers: {
-           'x-video-provider': selectedProviderId,
--          'x-video-model': videoModelId || '',
-+          'x-video-model': videoModelId || builtInModels[0]?.id || '',
-           'x-api-key': currentConfig?.apiKey || '',
-           'x-base-url': currentConfig?.baseUrl || '',
-         },
 diff --git a/lib/media/adapters/seedream-adapter.ts b/lib/media/adapters/seedream-adapter.ts
-index 537274fb..36aaa430 100644
+index 15a6cf3a..f9237485 100644
 --- a/lib/media/adapters/seedream-adapter.ts
 +++ b/lib/media/adapters/seedream-adapter.ts
-@@ -34,10 +34,16 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
+@@ -33,10 +33,16 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
   * baseUrl that already carries an `/api/...` path (e.g. a token plan's
   * `https://ark.cn-beijing.volces.com/api/plan/v3`) or ends in a version segment
   * (e.g. a gateway route such as `https://gateway.example/ark/v3`) is used
@@ -48,10 +22,10 @@ index 537274fb..36aaa430 100644
  }
  
 diff --git a/lib/server/ssrf-guard.ts b/lib/server/ssrf-guard.ts
-index 816b093e..631d28c4 100644
+index 80c13f4a..6cb9f152 100644
 --- a/lib/server/ssrf-guard.ts
 +++ b/lib/server/ssrf-guard.ts
-@@ -164,19 +164,37 @@ function isCloudMetadataAddress(value: string): boolean {
+@@ -168,19 +168,37 @@ function isCloudMetadataAddress(value: string): boolean {
    return tunnelEmbeddedIPv4(canonical).some((embedded) => CLOUD_METADATA_ADDRESSES.has(embedded));
  }
  
@@ -93,7 +67,7 @@ index 816b093e..631d28c4 100644
    const canonical = canonicalizeIp(value);
    if (canonical === null) return false;
    const range = ipaddr.parse(canonical).range();
-@@ -185,15 +203,21 @@ function isNeverAllowedRange(value: string): boolean {
+@@ -189,15 +207,21 @@ function isNeverAllowedRange(value: string): boolean {
  
  /**
   * Ranges the `ALLOW_LOCAL_NETWORKS` opt-in governs: private, loopback and
@@ -120,55 +94,3 @@ index 816b093e..631d28c4 100644
  }
  
  /** dns.lookup bounded by a timer; resolves to null on timeout so the caller decides. */
-diff --git a/lib/store/settings.ts b/lib/store/settings.ts
-index d26e71e4..53a95e6a 100644
---- a/lib/store/settings.ts
-+++ b/lib/store/settings.ts
-@@ -628,9 +628,14 @@ function resolveMediaModels<T extends { id: string; name: string }>(
-   config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
- ): T[] {
-   const customModels = config?.customModels ?? [];
--  return config?.replaceBuiltInModels && customModels.length > 0
--    ? customModels
--    : [...builtInModels, ...customModels];
-+  const merged =
-+    config?.replaceBuiltInModels && customModels.length > 0
-+      ? customModels
-+      : [...builtInModels, ...customModels];
-+  // A custom model duplicating a built-in id breaks "usable provider ⇒ a
-+  // concrete model is selected" consumers (duplicate React keys in the media
-+  // popover, ambiguous selections), so keep first occurrence per id.
-+  return merged.filter((m, i) => merged.findIndex((x) => x.id === m.id) === i);
- }
- 
- function hasMediaCredential(value: string | undefined): boolean {
-@@ -858,6 +863,29 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
-     state.videoProviderId = defaultVideoConfig.videoProviderId;
-   }
- 
-+  // A blank model id can get persisted (e.g. selecting a provider whose
-+  // catalog is empty at the time, like comfyui-image), and nothing downstream
-+  // heals it: every generation/verify call then fails with "No model
-+  // configured". Fill blanks from the provider's own catalog; never overwrite
-+  // an existing selection (async catalogs like ComfyUI workflows are handled
-+  // by their own selection flows).
-+  if (state.imageProviderId && !state.imageModelId) {
-+    const models = resolveMediaModels(
-+      IMAGE_PROVIDERS[state.imageProviderId]?.models ?? [],
-+      state.imageProvidersConfig?.[state.imageProviderId],
-+    );
-+    const first = models[0]?.id;
-+    if (first) state.imageModelId = first;
-+  }
-+  if (state.videoProviderId && !state.videoModelId) {
-+    const models = resolveMediaModels(
-+      VIDEO_PROVIDERS[state.videoProviderId]?.models ?? [],
-+      state.videoProvidersConfig?.[state.videoProviderId],
-+    );
-+    const first = models[0]?.id;
-+    if (first) state.videoModelId = first;
-+  }
-+
-   if (
-     !hasProviderId(TTS_PROVIDERS, state.ttsProviderId) &&
-     !(
