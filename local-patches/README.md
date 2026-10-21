@@ -34,7 +34,7 @@ v1.2.1 给"客户端自填端点"(BYOK)加了**严格公网策略**:用户在设
 ## 日常使用
 
 - **停留在 `local-patches` 分支**
-- **启动:终端里跑 `./start.sh`**(自动按序:Docker Desktop 没开会先拉起 → PostgreSQL 容器 → :3000 网页服务后台运行,日志 /tmp/openmaic-dev.log);**关闭:`./stop.sh`**(停服务 + 停库,数据在卷里不丢;Docker Desktop 保持开启)
+- **启动/关闭:Finder 里双击项目文件夹下的 `启动OpenMAIC.command` / `关闭OpenMAIC.command`**(弹出终端窗口自动跑,⌘W 关窗);终端手动跑 `./start.sh` / `./stop.sh` 等价。start 自动按序:Docker Desktop 没开会先拉起 → PostgreSQL 容器 → :3000 网页服务后台运行(日志 /tmp/openmaic-dev.log);stop 停服务 + 停库(数据在卷里不丢,Docker Desktop 保持开启)
 - 手动等价操作:数据库 `pnpm db:up` / `pnpm db:down`,服务 `pnpm dev`(:3000)
 - 云端备份:`git push --force-with-lease fork local-patches`(fork = github.com/SeanLiew523/OpenMAIC;rebase 改写历史需强推)
 
